@@ -1,8 +1,7 @@
 name: warden-guard
 services:
   warden-guard:
-    build: .
-    image: warden-guard:local
+    image: ${WG_IMAGE:-ghcr.io/aixpot/warden-guard:0.1.0}
     restart: unless-stopped
     read_only: true
     init: true

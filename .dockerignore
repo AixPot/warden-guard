@@ -2,3 +2,7 @@
 !Dockerfile
 !warden_guard/
 !warden_guard/*.py
+!LICENSE
+!SOURCES.md
+!NOTICE
+!VERSION

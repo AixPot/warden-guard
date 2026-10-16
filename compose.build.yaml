@@ -1,0 +1,4 @@
+services:
+  warden-guard:
+    build: .
+    image: warden-guard:local

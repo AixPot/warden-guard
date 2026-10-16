@@ -1,0 +1,15 @@
+warden-guard: Copyright (c) 2026 AixPot; MIT, see LICENSE.
+
+This image aggregates independent programs invoked through subprocesses.
+Bitwarden CLI OSS 2026.10.0: Copyright Bitwarden Inc.; GPL-3.0,
+not relicensed under the warden-guard MIT license. No Bitwarden endorsement
+or trademark rights are claimed. Commercial CLI/npm builds are not bundled.
+Upstream licenses: /usr/share/licenses/bitwarden.
+Corresponding CLI and SDK source archives (commercial directories excluded; including upstream
+build scripts and dependency lockfiles): /usr/share/warden-guard/sources.
+Clients commit b449ac1d255784380d75ef026343198891286be7 (cli-v2026.10.0).
+SDK commit c5e53d3e82ab80fdc9fd79ebd74058399a6444b6 (0.2.0-main.1075).
+Sources are also attached to each versioned GitHub Release alongside the image
+reference, at https://github.com/AixPot/warden-guard/releases.
+Node.js and Debian packages retain their separate licenses; see the Node
+installation and /usr/share/doc/*/copyright. No third-party license is changed.

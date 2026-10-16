@@ -20,7 +20,7 @@
 - Docker Engine 与 Docker Compose v2
 - 两个不同的个人保险库账户及其个人 API Key
 
-镜像使用 Bitwarden CLI `2026.10.0`，已测试 Vaultwarden `1.37.4`。
+镜像使用 Bitwarden CLI **OSS** `2026.10.0`，支持 Linux amd64；已测试 Vaultwarden `1.37.4`。
 
 ### 1. 获取源码
 
@@ -44,10 +44,12 @@ chmod 700 state
 
 不要将凭据文件、备份或 `state/` 提交到 Git。
 
-### 3. 构建并执行一次
+### 3. 拉取发布镜像并执行一次
+
+默认使用 `ghcr.io/aixpot/warden-guard:0.1.0`；版本首次发布后可拉取。也可用 `WG_IMAGE` 指定版本或 `@sha256:` 摘要。
 
 ```sh
-docker compose build
+docker compose pull
 docker compose run --rm warden-guard once
 ```
 
@@ -98,8 +100,9 @@ docker compose logs -f
 # 运行单元测试（需要 Python 3 和 OpenSSL）
 python3 -m unittest discover -s tests -v
 
-# 构建容器
-docker compose build
+# 本地构建及运行（不拉取发布镜像）
+docker compose -f compose.yaml -f compose.build.yaml build
+docker compose -f compose.yaml -f compose.build.yaml run --rm warden-guard once
 ```
 
 源码结构：
@@ -114,6 +117,12 @@ tests/         # 单元测试及隔离验收工具
 ```
 
 `tests/live_acceptance.py` 用于隔离环境的真实 CLI/Vaultwarden 验收，需显式设置 `WG_ISOLATED_ACCEPTANCE=yes`。它会创建测试账户并执行导入、删除操作，不要用于真实保险库。测试环境需要额外安装 `openssh-client`，并使用无外网、无发布端口的独立 Vaultwarden 环境。
+
+### 镜像版本与发布
+
+`main` 推送通过测试后更新 `:main` 和 `:sha-<完整提交SHA>`；PR 仅测试和构建，不发布。发布维护者更新 `VERSION` 并推送对应 `vX.Y.Z` 标签，构建成功后生成 `:X.Y.Z`、`:latest` 和 GitHub Release。每次提交不会自动打版本标签。
+
+Release 附源码 tar/zip、Compose、镜像摘要、`SHA256SUMS` 及第三方源码；可使用 `sha256sum -c SHA256SUMS` 验证下载文件。工作流只发布，不自动部署。生产建议固定版本或摘要，不跟随 `main`/`latest`。
 
 ## 许可证
 
