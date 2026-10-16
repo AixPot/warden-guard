@@ -1,0 +1,22 @@
+name: warden-guard
+services:
+  warden-guard:
+    build: .
+    image: warden-guard:local
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TZ: Asia/Shanghai
+      WG_HOUR: "0"
+      WG_MINUTE: "0"
+      WG_RETENTION_DAYS: "30"
+      WG_MIN_BACKUPS: "7"
+    tmpfs:
+      - /run/warden-guard:rw,noexec,nosuid,size=256m,mode=0700
+      - /tmp:rw,noexec,nosuid,size=64m,mode=0700
+    volumes:
+      - ./state:/state
+      - ./credentials.json:/run/secrets/credentials.json:ro

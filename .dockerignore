@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!warden_guard/
+!warden_guard/*.py
