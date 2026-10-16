@@ -118,12 +118,6 @@ tests/         # 单元测试及隔离验收工具
 
 `tests/live_acceptance.py` 用于隔离环境的真实 CLI/Vaultwarden 验收，需显式设置 `WG_ISOLATED_ACCEPTANCE=yes`。它会创建测试账户并执行导入、删除操作，不要用于真实保险库。测试环境需要额外安装 `openssh-client`，并使用无外网、无发布端口的独立 Vaultwarden 环境。
 
-### 镜像版本与发布
-
-`main` 推送通过测试后更新 `:main` 和 `:sha-<完整提交SHA>`；PR 仅测试和构建，不发布。发布维护者更新 `VERSION` 并推送对应 `vX.Y.Z` 标签，构建成功后生成 `:X.Y.Z`、`:latest` 和 GitHub Release。每次提交不会自动打版本标签。
-
-Release 附源码 tar/zip、Compose、镜像摘要、`SHA256SUMS` 及第三方源码；可使用 `sha256sum -c SHA256SUMS` 验证下载文件。工作流只发布，不自动部署。生产建议固定版本或摘要，不跟随 `main`/`latest`。
-
 ## 许可证
 
 [MIT](LICENSE)。第三方依赖及许可说明见 [SOURCES.md](SOURCES.md)。
