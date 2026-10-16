@@ -1,5 +1,11 @@
 """CLI diagnostics are deliberately suppressed."""
 import argparse
+import base64
+import copy
+import uuid
+import resource
+from contextlib import contextmanager
+from .attachments import filename, MAX_FILE, MAX_TOTAL, MAX_COUNT, MAX_JSON
 import datetime
 import json
 import os
@@ -21,13 +27,21 @@ class Profile:
         self.path = None
         self.env = None
 
-    def command(self, *args, input=None):
-        if self.role == 'source' and args[0] not in ('config','login','unlock','sync','export','logout','list'):
+    def command(self, *args, input=None, file_limit=None):
+        if self.role == 'source' and args[0] not in ('config','login','unlock','sync','export','logout','list') and not (len(args)>1 and args[:2]==('get','attachment')):
             raise Blocked('source_readonly')
-        result = subprocess.run(['bw',*args],input=input,env=self.env,stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL,timeout=180)
-        if result.returncode: raise Blocked('cli')
-        return result.stdout
+        def limits():
+            limit=MAX_JSON if file_limit is None else file_limit
+            resource.setrlimit(resource.RLIMIT_FSIZE,(limit,limit))
+        # Both CLI JSON/stdout and downloaded files are bounded by RLIMIT_FSIZE.
+        # Profiles and this anonymous output file live on the same private tmpfs.
+        with tempfile.TemporaryFile(dir=self.ram) as output:
+            result = subprocess.run(['bw',*args],input=input,env=self.env,stdout=output,
+                                    stderr=subprocess.DEVNULL,timeout=180,preexec_fn=limits)
+            if result.returncode: raise Blocked('cli')
+            if output.tell()>MAX_JSON: raise Blocked('json_limit')
+            output.seek(0)
+            return output.read(MAX_JSON+1)
 
     def __enter__(self):
         self.path = Path(tempfile.mkdtemp(prefix=self.role+'-',dir=self.ram))
@@ -61,20 +75,90 @@ class Profile:
             if self.path is not None: shutil.rmtree(self.path,ignore_errors=True)
             if self.env is not None: self.env.clear()
 
-    def export_raw(self):
+    def fresh(self):
+        return Profile(self.role,self.scope,self.storage,self.ram)
+
+    def export_snapshot(self):
+        if shutil.disk_usage(self.ram).free < 8*(MAX_TOTAL+MAX_JSON): raise Blocked('tmpfs_space')
         self.command('sync')
-        items=json.loads(self.command('list','items'))
+        normal=json.loads(self.command('list','items'))
+        archived=json.loads(self.command('list','items','--archived'))
+        trash=json.loads(self.command('list','items','--trash'))
         orgs=json.loads(self.command('list','organizations'))
+        items=normal+archived+trash
         reject_unexportable(items,orgs)
+        by_id=scope_items(normal,archived,trash)
         path=self.path/'vault.json'
-        self.command('export','--format','json','--output',str(path))
+        self.command('export','--format','json','--output',str(path),file_limit=MAX_JSON)
         try:
-            raw=path.read_bytes()
-            exported=json.loads(raw)
-            if {i['id'] for i in exported['items']} != {i['id'] for i in items}:
-                raise Blocked('export_incomplete')
-            return raw
+            raw=path.read_bytes(); exported=json.loads(raw)
+            exported_ids=set()
+            for item in exported['items']:
+                ident=item.get('id')
+                if not isinstance(ident,str) or ident in exported_ids or ident not in by_id: raise Blocked('export_incomplete')
+                exported_ids.add(ident)
+                listed=by_id[ident]
+                if any(item.get(k)!=listed.get(k) for k in ('type','organizationId','deletedDate','archivedDate')): raise Blocked('export_scope')
+            active={k:v for k,v in by_id.items() if not v.get('deletedDate')}
+            exported_active=[i for i in exported['items'] if not i.get('deletedDate')]
+            if {i['id'] for i in exported_active}!=set(active): raise Blocked('export_incomplete')
+            data=copy.deepcopy(exported); data['items']=exported_active
+            for item in data['items']:
+                item['attachments']=by_id[item['id']].get('attachments') or []
+            return data,raw
         finally: path.unlink(missing_ok=True)
+
+    def export_raw(self):
+        return self.export_snapshot()[1]
+
+    def download_attachment(self, item, attachment):
+        require_tmpfs(self.ram)
+        # CLI size describes ENCRYPTED bytes (type-2 overhead 49 + PKCS7 padding).
+        size=attachment.get('size')
+        if not isinstance(size,(str,int)) or isinstance(size,bool) or not str(size).isdigit(): raise Blocked('attachment_size')
+        size=int(size)
+        if size<65 or size>MAX_FILE+65: raise Blocked('attachment_limit')
+        if shutil.disk_usage(self.ram).free < 8*(MAX_TOTAL+MAX_JSON): raise Blocked('tmpfs_space')
+        path=self.path/('download-'+uuid.uuid4().hex)
+        try:
+            self.command('get','attachment',attachment['id'],'--itemid',item,'--output',str(path),file_limit=MAX_FILE)
+            if not path.is_file() or path.is_symlink(): raise Blocked('attachment_file')
+            payload=path.read_bytes()
+            if 49+16*(len(payload)//16+1)!=size: raise Blocked('attachment_length')
+            return payload
+        finally: path.unlink(missing_ok=True)
+
+    def upload_attachment(self, item, name, payload):
+        filename(name); require_tmpfs(self.ram)
+        if len(payload)>MAX_FILE: raise Blocked('attachment_limit')
+        with tempfile.TemporaryDirectory(prefix='upload-',dir=self.path) as directory:
+            path=Path(directory)/name; atomic(path,payload)
+            self.command('create','attachment','--file',str(path),'--itemid',item)
+
+    def ingest_mapped(self, data):
+        # Temporary random custom fields create a bijection even for equal bodies.
+        # No name matching and no reliance on server import order.
+        marker='warden-guard-'+uuid.uuid4().hex
+        marked=copy.deepcopy(data); tokens={}
+        for item in marked['items']:
+            token=uuid.uuid4().hex; tokens[token]=item['id']
+            item['fields']=(item.get('fields') or [])+[{'name':marker,'value':token,'type':0}]
+        self.ingest(marked)
+        observed,_=self.export_snapshot(); mapping={}
+        for item in observed['items']:
+            matches=[f for f in (item.get('fields') or []) if f.get('name')==marker]
+            if not matches: continue
+            if len(matches)!=1 or matches[0].get('value') not in tokens: raise Blocked('id_mapping')
+            old=tokens[matches[0]['value']]
+            if old in mapping: raise Blocked('id_mapping')
+            mapping[old]=item['id']
+        if set(mapping.values()) & {i['id'] for i in data['items']} or len(mapping)!=len(data['items']): raise Blocked('id_mapping')
+        originals={i['id']:i for i in data['items']}
+        for old,new in mapping.items():
+            item=json.loads(self.command('get','item',new))
+            item['fields']=originals[old].get('fields')
+            self.command('edit','item',new,input=base64.b64encode(encoded(item).encode()))
+        return mapping
 
     def ingest(self, data):
         path=self.path/'import.json'
@@ -85,11 +169,26 @@ class Profile:
     def delete(self, kind, ident):
         self.command('delete',kind,ident)
 
+def scope_items(normal, archived, trash):
+    result={}
+    for rows, state in ((normal,'normal'),(archived,'archived'),(trash,'trash')):
+        if not isinstance(rows,list): raise Blocked('export_scope')
+        for item in rows:
+            ident=item.get('id')
+            if not isinstance(ident,str) or not ident or ident in result: raise Blocked('export_scope')
+            if state=='trash':
+                if not item.get('deletedDate'): raise Blocked('export_scope')
+            elif item.get('deletedDate') or bool(item.get('archivedDate')) != (state=='archived'):
+                raise Blocked('export_scope')
+            result[ident]=item
+    return result
+
+
 def reject_unexportable(items, organizations):
     if not isinstance(items,list) or not isinstance(organizations,list) or organizations:
         raise Blocked('unsupported')
     for item in items:
-        if item.get('organizationId') or item.get('attachments') or type(item.get('type')) is not int or item['type'] not in (1,2,3,4,5):
+        if item.get('organizationId') or item.get('collectionIds') or type(item.get('type')) is not int or item['type'] not in (1,2,3,4,5):
             raise Blocked('unsupported')
 
 def private_json(path):

@@ -7,7 +7,7 @@ from warden_guard.runtime import once
 
 class GuardrailTests(unittest.TestCase):
     def test_incomplete_typed_content_rejected(self):
-        data=vault(); data['items'][0]['login']={}
+        data=vault(); data['items'][0]['login']={'password':42}
         with self.assertRaises(Invalid): validate(data)
         data['items'][0].update(type=5,sshKey={})
         with self.assertRaises(Invalid): validate(data)

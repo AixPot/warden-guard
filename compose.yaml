@@ -1,7 +1,7 @@
 name: warden-guard
 services:
   warden-guard:
-    image: ${WG_IMAGE:-ghcr.io/aixpot/warden-guard:0.1.0}
+    image: ${WG_IMAGE:-ghcr.io/aixpot/warden-guard:0.2.0}
     restart: unless-stopped
     read_only: true
     init: true
@@ -14,7 +14,7 @@ services:
       WG_RETENTION_DAYS: "30"
       WG_MIN_BACKUPS: "7"
     tmpfs:
-      - /run/warden-guard:rw,noexec,nosuid,size=256m,mode=0700
+      - /run/warden-guard:rw,noexec,nosuid,size=512m,mode=0700
       - /tmp:rw,noexec,nosuid,size=64m,mode=0700
     volumes:
       - ./state:/state

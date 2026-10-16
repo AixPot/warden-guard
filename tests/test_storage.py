@@ -7,7 +7,9 @@ class StorageTests(unittest.TestCase):
             s=Storage(d); a=s.identity('source','https://example.invalid','user@example.invalid')
             self.assertEqual(a,Storage(d).identity('source','https://example.invalid','user@example.invalid'))
             self.assertNotEqual(a,s.identity('dest','https://example.invalid','user@example.invalid'))
-            f=next(pathlib.Path(d,'devices').glob('*.json'))
+            # Select the source identity explicitly, never filesystem iteration order.
+            f=next(p for p in pathlib.Path(d,'devices').glob('*.json')
+                   if json.loads(p.read_text()).get('appId') == a)
             self.assertEqual(f.stat().st_mode & 0o777,0o600)
             f.write_text('{"token":"bad"}')
             with self.assertRaises(Blocked): s.identity('source','https://example.invalid','user@example.invalid')

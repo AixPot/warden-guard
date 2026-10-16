@@ -8,9 +8,9 @@
 - 同步前保存目标快照，导入并核对内容后再删除旧条目。
 - 内容未变化时跳过导入，避免重复记录。
 - 保留稳定的设备标识，避免每次运行都生成新的登录设备。
-- 支持登录、笔记、银行卡、身份和 SSH 密钥条目。
+- 支持登录、笔记、银行卡、身份和 SSH 密钥条目（含个人归档条目及其归档状态），以及完整附件加密备份、同步与下载字节核验。
 
-> 目标账户用于单向镜像，原有内容可能被替换。建议使用专用目标账户，并先在测试账户上验证。暂不支持附件、组织库、回收站、Send 和账户设置。
+> 目标账户用于单向镜像，原有内容可能被替换。建议使用专用目标账户，并先在测试账户上验证。暂不支持组织库、回收站、Send 和账户设置。附件默认单文件最多 16 MiB、每库合计 16 MiB/256 份；目标上传需满足服务端权限和配额，新旧附件共存时需额外空间。
 
 ## 部署
 
@@ -46,7 +46,7 @@ chmod 700 state
 
 ### 3. 拉取发布镜像并执行一次
 
-默认使用 `ghcr.io/aixpot/warden-guard:0.1.0`；版本首次发布后可拉取。也可用 `WG_IMAGE` 指定版本或 `@sha256:` 摘要。
+默认使用 `ghcr.io/aixpot/warden-guard:0.2.0`；版本发布后可拉取。也可用 `WG_IMAGE` 指定版本或 `@sha256:` 摘要。
 
 ```sh
 docker compose pull
@@ -81,6 +81,8 @@ docker compose logs -f
 | `WG_MINUTE` | `0` | 每日执行分钟 |
 | `WG_RETENTION_DAYS` | `30` | 源备份保留天数 |
 | `WG_MIN_BACKUPS` | `7` | 源备份最低保留份数 |
+| `WG_ATTACHMENT_FILE_MIB` | `16` | 单附件明文上限（1–32 MiB，不得超过总上限） |
+| `WG_ATTACHMENT_TOTAL_MIB` | `16` | 每库附件明文总上限（1–32 MiB）；提高前检查 tmpfs 可用量 |
 
 修改后运行 `docker compose up -d` 使配置生效。调度器不补跑停机期间错过的任务。
 
@@ -109,6 +111,8 @@ docker compose -f compose.yaml -f compose.build.yaml run --rm warden-guard once
 
 ```text
 warden_guard/
+  attachments.py # 版本化附件清单、hash 与 payload
+  restore.py   # 离线安全提取附件快照（仅 tmpfs）
   content.py   # 导出结构验证与内容比较
   cycle.py     # 备份和同步流程
   runtime.py   # CLI 会话、配置与调度

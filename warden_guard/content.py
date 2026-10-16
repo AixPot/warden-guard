@@ -36,13 +36,26 @@ def validate(data, nonempty=False):
         if type(kind) is not int or kind not in subtypes or not isinstance(item.get(subtypes[kind]), dict) or not isinstance(item.get('name'), str):
             raise Invalid('type')
         payload=item[subtypes[kind]]
-        required={1:('password',),2:('type',),3:(),4:(),5:('privateKey','publicKey','keyFingerprint')}[kind]
+        required={1:(),2:('type',),3:(),4:(),5:('privateKey','publicKey','keyFingerprint')}[kind]
         if any(key not in payload for key in required):
             raise Invalid('content_missing')
+        if kind == 1 and payload.get('password') is not None and not isinstance(payload['password'], str):
+            raise Invalid('password')
         if kind==2 and payload['type'] != 0:
             raise Invalid('secure_note')
-        if item.get('organizationId') or item.get('collectionIds') or item.get('attachments') or item.get('deletedDate'):
+        if item.get('organizationId') or item.get('collectionIds') or item.get('deletedDate'):
             raise Invalid('unsupported')
+        attachments=item.get('attachments') or []
+        if not isinstance(attachments,list): raise Invalid('attachments')
+        seen=set()
+        for a in attachments:
+            if not isinstance(a,dict) or not isinstance(a.get('fileName'),str): raise Invalid('attachment')
+            if 'sha256' in a:
+                if set(a)!={'fileName','length','sha256'} or type(a.get('length')) is not int or a['length']<0 or not isinstance(a['sha256'],str) or len(a['sha256'])!=64 or any(c not in '0123456789abcdef' for c in a['sha256']):
+                    raise Invalid('attachment')
+            else:
+                if not isinstance(a.get('id'),str) or not a['id'] or a['id'] in seen: raise Invalid('attachment')
+                seen.add(a['id'])
         if item.get('folderId') is not None and item['folderId'] not in folders:
             raise Invalid('reference')
     if nonempty and not ids:
@@ -56,8 +69,9 @@ def canonical(data):
         item = {k:copy.deepcopy(v) for k,v in original.items() if k not in ITEM_METADATA}
         # Absent folderId and null both mean no folder in the export protocol.
         item['folderId'] = folders.get(item.get('folderId'))
+        item['attachments'] = item.get('attachments') or []
         if item['type'] == 1:
-            for key in ('username', 'totp'):
+            for key in ('username', 'totp', 'password'):
                 if item['login'].get(key) in (None, ''):
                     item['login'][key] = None
         items.append(encoded(item))

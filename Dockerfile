@@ -25,7 +25,7 @@ COPY --from=upstream /bw/bw /usr/local/bin/bw
 COPY --from=upstream /licenses /usr/share/licenses
 COPY --from=upstream /sources /usr/share/warden-guard/sources
 RUN BITWARDENCLI_APPDATA_DIR=/bw-build-check test "$(BITWARDENCLI_APPDATA_DIR=/bw-build-check bw --version)" = "2026.10.0" && rm -rf /bw-build-check
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="warden-guard" \
       org.opencontainers.image.source="https://github.com/AixPot/warden-guard" \
